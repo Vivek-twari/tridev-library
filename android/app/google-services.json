@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "33843014639",
+    "project_id": "tridev-library",
+    "storage_bucket": "tridev-library.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:33843014639:android:ee6fbe896655869a5ca41a",
+        "android_client_info": {
+          "package_name": "com.example.studyhall"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCXbQ0hYIzHEBeqMpKe2cKgJuahZkl4e3Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
