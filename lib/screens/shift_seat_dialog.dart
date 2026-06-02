@@ -5,6 +5,7 @@ import '../models/availability_model.dart';
 import '../models/student_model.dart';
 import '../services/seat_service.dart';
 import '../services/student_service.dart';
+import '../services/history_service.dart';
 
 class ShiftSeatDialog extends StatefulWidget {
   final StudentModel student;
@@ -106,6 +107,11 @@ class _ShiftSeatDialogState extends State<ShiftSeatDialog> {
         studentId: widget.student.id,
 
         newSeat: selectedSeat!,
+      );
+      await HistoryService.addEntry(
+        text:
+            "Seat changed for ${widget.student.name} from ${widget.student.assignedSeat} to $selectedSeat",
+        type: "seatShifted",
       );
 
       if (!mounted) return;

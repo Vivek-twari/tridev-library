@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 
 import '../models/seat_model.dart';
+import '../models/student_model.dart';
+import 'student_details_screen.dart';
+
+enum SlotStatus { available, booked, unavailable }
 
 class SeatDetailsScreen extends StatelessWidget {
   final int seatNumber;
@@ -25,21 +29,6 @@ class SeatDetailsScreen extends StatelessWidget {
           "Seat Details",
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
         ),
-
-        actions: [
-          TextButton(
-            onPressed: () {},
-
-            child: const Text(
-              "Edit",
-
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
       ),
 
       body: SingleChildScrollView(
@@ -118,93 +107,99 @@ class SeatDetailsScreen extends StatelessWidget {
 
             const SizedBox(height: 18),
 
-            SlotCard(
-              title: "Morning",
-              timing: "6 AM - 12 PM",
+            Builder(
+              builder: (context) {
+                final bool m = seat?.morningStudentId != null;
+                final bool e = seat?.eveningStudentId != null;
+                final bool d = seat?.dayStudentId != null;
+                final bool n = seat?.nightStudentId != null;
+                final bool p = seat?.primeStudentId != null;
 
-              studentId: seat?.morningStudentId,
+                SlotStatus morningStatus() {
+                  if (m) return SlotStatus.booked;
+                  if (p) return SlotStatus.unavailable;
+                  if (d) return SlotStatus.unavailable;
+                  return SlotStatus.available;
+                }
 
-              icon: Icons.wb_sunny_rounded,
+                SlotStatus eveningStatus() {
+                  if (e) return SlotStatus.booked;
+                  if (p) return SlotStatus.unavailable;
+                  if (d) return SlotStatus.unavailable;
+                  return SlotStatus.available;
+                }
 
-              iconColor: const Color(0xFFF59E0B),
-            ),
+                SlotStatus dayStatus() {
+                  if (d) return SlotStatus.booked;
+                  if (p) return SlotStatus.unavailable;
+                  if (m || e) return SlotStatus.unavailable;
+                  return SlotStatus.available;
+                }
 
-            SlotCard(
-              title: "Evening",
-              timing: "12 PM - 6 PM",
+                SlotStatus nightStatus() {
+                  if (n) return SlotStatus.booked;
+                  if (p) return SlotStatus.unavailable;
+                  return SlotStatus.available;
+                }
 
-              studentId: seat?.eveningStudentId,
+                SlotStatus primeStatus() {
+                  if (p) return SlotStatus.booked;
+                  if (m || e || d || n) return SlotStatus.unavailable;
+                  return SlotStatus.available;
+                }
 
-              icon: Icons.sunny,
+                return Column(
+                  children: [
+                    SlotCard(
+                      title: "Morning",
+                      timing: "6 AM - 12 PM",
+                      studentId: seat?.morningStudentId,
+                      icon: Icons.wb_sunny_rounded,
+                      iconColor: const Color(0xFFF59E0B),
+                      status: morningStatus(),
+                    ),
 
-              iconColor: const Color(0xFFFF8C42),
-            ),
+                    SlotCard(
+                      title: "Evening",
+                      timing: "12 PM - 6 PM",
+                      studentId: seat?.eveningStudentId,
+                      icon: Icons.sunny,
+                      iconColor: const Color(0xFFFF8C42),
+                      status: eveningStatus(),
+                    ),
 
-            SlotCard(
-              title: "Day",
-              timing: "6 AM - 6 PM",
+                    SlotCard(
+                      title: "Day",
+                      timing: "6 AM - 6 PM",
+                      studentId: seat?.dayStudentId,
+                      icon: Icons.light_mode,
+                      iconColor: const Color(0xFF3B82F6),
+                      status: dayStatus(),
+                    ),
 
-              studentId: seat?.dayStudentId,
+                    SlotCard(
+                      title: "Night",
+                      timing: "6 PM - 6 AM",
+                      studentId: seat?.nightStudentId,
+                      icon: Icons.nightlight_round,
+                      iconColor: const Color(0xFF8B5CF6),
+                      status: nightStatus(),
+                    ),
 
-              icon: Icons.light_mode,
-
-              iconColor: const Color(0xFF3B82F6),
-            ),
-
-            SlotCard(
-              title: "Night",
-              timing: "6 PM - 6 AM",
-
-              studentId: seat?.nightStudentId,
-
-              icon: Icons.nightlight_round,
-
-              iconColor: const Color(0xFF8B5CF6),
-            ),
-
-            SlotCard(
-              title: "Prime (24 Hours)",
-              timing: "6 AM - 6 AM",
-
-              studentId: seat?.primeStudentId,
-
-              icon: Icons.workspace_premium,
-
-              iconColor: const Color(0xFFA855F7),
+                    SlotCard(
+                      title: "Prime (24 Hours)",
+                      timing: "6 AM - 6 AM",
+                      studentId: seat?.primeStudentId,
+                      icon: Icons.workspace_premium,
+                      iconColor: const Color(0xFFA855F7),
+                      status: primeStatus(),
+                    ),
+                  ],
+                );
+              },
             ),
 
             const SizedBox(height: 30),
-
-            /// CLEAR BUTTON
-            SizedBox(
-              width: double.infinity,
-              height: 60,
-
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.red.shade300),
-
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-
-                onPressed: () {},
-
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-
-                label: const Text(
-                  "Clear This Seat",
-
-                  style: TextStyle(
-                    color: Colors.red,
-                    fontWeight: FontWeight.bold,
-
-                    fontSize: 18,
-                  ),
-                ),
-              ),
-            ),
           ],
         ),
       ),
@@ -217,6 +212,7 @@ class SlotCard extends StatelessWidget {
   final String timing;
 
   final String? studentId;
+  final SlotStatus status;
 
   final IconData icon;
   final Color iconColor;
@@ -226,13 +222,15 @@ class SlotCard extends StatelessWidget {
     required this.title,
     required this.timing,
     required this.studentId,
+    required this.status,
     required this.icon,
     required this.iconColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    final bool booked = studentId != null;
+    final bool booked = status == SlotStatus.booked;
+    final bool unavailable = status == SlotStatus.unavailable;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
@@ -289,11 +287,57 @@ class SlotCard extends StatelessWidget {
                 if (booked) ...[
                   const SizedBox(height: 10),
 
-                  Text(
-                    "Student ID: $studentId",
+                  Builder(
+                    builder: (context) {
+                      final studentsBox = Hive.box<StudentModel>("studentsBox");
+                      final student = studentId != null
+                          ? studentsBox.get(studentId)
+                          : null;
 
-                    style: const TextStyle(
-                      color: Colors.black87,
+                      if (student != null) {
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    StudentDetailsScreen(student: student),
+                              ),
+                            );
+                          },
+                          child: Text(
+                            student.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            softWrap: true,
+                            style: const TextStyle(
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        );
+                      }
+
+                      return Text(
+                        "Student ID: $studentId",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      );
+                    },
+                  ),
+                ] else if (unavailable) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    "Unavailable",
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -306,16 +350,22 @@ class SlotCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
 
             decoration: BoxDecoration(
-              color: booked ? Colors.red.shade100 : Colors.green.shade100,
+              color: booked
+                  ? Colors.red.shade100
+                  : (unavailable
+                        ? Colors.grey.shade200
+                        : Colors.green.shade100),
 
               borderRadius: BorderRadius.circular(30),
             ),
 
             child: Text(
-              booked ? "Booked" : "Available",
+              booked ? "Booked" : (unavailable ? "Unavailable" : "Available"),
 
               style: TextStyle(
-                color: booked ? Colors.red : Colors.green,
+                color: booked
+                    ? Colors.red
+                    : (unavailable ? Colors.grey : Colors.green),
 
                 fontWeight: FontWeight.bold,
               ),

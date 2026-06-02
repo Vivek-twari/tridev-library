@@ -10,6 +10,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/student_model.dart';
 import '../services/sync_time_service.dart';
 import '../services/storage_service.dart';
+import '../services/history_service.dart';
 
 class EditStudentScreen extends StatefulWidget {
   final StudentModel student;
@@ -175,7 +176,11 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
         await studentsBox.put(widget.student.id, updatedStudent);
       }
+      await HistoryService.addEntry(
+        text: "Details edited for ${widget.student.name}",
 
+        type: "edited",
+      );
       if (!mounted) return;
 
       navigator.pop();

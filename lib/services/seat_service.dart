@@ -138,7 +138,6 @@ class SeatService {
     }
 
     await seatsBox.put(seatNumber, updatedSeat);
-    await seat.save();
   }
 
   static Future<void> updateAvailability({required int seatNumber}) async {

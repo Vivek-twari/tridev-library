@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import '../services/seat_service.dart';
 import 'receipt_screen.dart';
 import '../services/sync_time_service.dart';
+import '../services/history_service.dart';
 
 class AddStudentScreen extends StatefulWidget {
   const AddStudentScreen({super.key});
@@ -218,6 +219,12 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         expiryDate: calculatedExpiryDate,
         amountPaid: int.parse(amountController.text.trim()),
         receiptUrl: receiptUrl ?? "pending",
+      );
+      await HistoryService.addEntry(
+        text:
+            "${student.name} added to Seat ${student.assignedSeat} (${student.planType})",
+
+        type: "added",
       );
 
       if (!mounted) return;

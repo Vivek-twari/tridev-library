@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
-
+import '../services/history_service.dart';
 import '../models/student_model.dart';
 import '../services/student_service.dart';
 import '../services/storage_service.dart';
@@ -194,6 +194,12 @@ class _RenewStudentScreenState extends State<RenewStudentScreen> {
           receiptUrl: receiptUrl!,
         );
       }
+      await HistoryService.addEntry(
+        text:
+            "Membership renewed for ${widget.student.name} till ${DateFormat('dd MMM yyyy').format(calculatedExpiryDate)}",
+
+        type: "renewed",
+      );
 
       finishSuccess();
     } catch (e) {

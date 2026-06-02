@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/student_model.dart';
 import '../services/sync_service.dart';
 import 'add_student_screen.dart';
 import 'renew_student_screen.dart';
 import 'student_details_screen.dart';
+import 'analytics_screen.dart';
 
 class StudentListScreen extends StatefulWidget {
   const StudentListScreen({super.key});
@@ -19,6 +21,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
   bool _showSearchBar = false;
   Set<String> selectedPlanTypes = {};
   String selectedStatusFilter = 'All';
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
@@ -30,6 +33,44 @@ class _StudentListScreenState extends State<StudentListScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _syncStudents(BuildContext context) async {
+    // prevent manual spamming: 2 minute cooldown
+    final prefs = await SharedPreferences.getInstance();
+    final lastManual = prefs.getInt('last_manual_sync_epoch') ?? 0;
+    final nowEpoch = DateTime.now().millisecondsSinceEpoch;
+    const cooldownMs = 2 * 60 * 1000; // 2 minutes
+
+    if (lastManual != 0 && nowEpoch - lastManual < cooldownMs) {
+      final waitSeconds = ((cooldownMs - (nowEpoch - lastManual)) / 1000)
+          .ceil();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Please wait $waitSeconds seconds before syncing again',
+          ),
+        ),
+      );
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Syncing students...')),
+    );
+
+    try {
+      await SyncService.syncStudents();
+      await prefs.setInt(
+        'last_manual_sync_epoch',
+        DateTime.now().millisecondsSinceEpoch,
+      );
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Students synced successfully')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+    }
   }
 
   // Responsive sizing based on screen width
@@ -78,7 +119,50 @@ class _StudentListScreenState extends State<StudentListScreen> {
     final responsivePadding = getResponsivePadding(context);
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: const Color(0xFFF5F7FB),
+      drawer: Drawer(
+        child: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                height: 64,
+                color: const Color(0xFF2563EB),
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: const Text(
+                  'Menu',
+                  style: TextStyle(color: Colors.white, fontSize: 18),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.sync),
+                title: const Text('Sync Students'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _syncStudents(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.analytics),
+
+                title: const Text('Analytics'),
+
+                onTap: () async {
+                  Navigator.pop(context);
+
+                  await Navigator.push(
+                    context,
+
+                    MaterialPageRoute(builder: (_) => const AnalyticsScreen()),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
 
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFF2563EB),
@@ -163,62 +247,10 @@ class _StudentListScreenState extends State<StudentListScreen> {
                           children: [
                             Row(
                               children: [
-                                Container(
-                                  padding: EdgeInsets.all(
-                                    isSmallScreen ? 10 : 12,
-                                  ),
-
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-
-                                    borderRadius: BorderRadius.circular(18),
-
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        blurRadius: 10,
-                                        color: Colors.black12,
-                                      ),
-                                    ],
-                                  ),
-
-                                  child: Icon(
-                                    Icons.menu,
-                                    size: isSmallScreen ? 20 : 24,
-                                  ),
-                                ),
-
-                                const SizedBox(width: 10),
-
                                 GestureDetector(
-                                  onTap: () async {
-                                    final messenger = ScaffoldMessenger.of(
-                                      context,
-                                    );
-                                    messenger.showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Syncing students...'),
-                                      ),
-                                    );
-
-                                    try {
-                                      await SyncService.syncStudents();
-
-                                      messenger.showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Students synced successfully',
-                                          ),
-                                        ),
-                                      );
-                                    } catch (e) {
-                                      messenger.showSnackBar(
-                                        SnackBar(
-                                          content: Text('Sync failed: $e'),
-                                        ),
-                                      );
-                                    }
-                                  },
-                                  child: buildTopIcon(Icons.sync, context),
+                                  onTap: () =>
+                                      _scaffoldKey.currentState?.openDrawer(),
+                                  child: buildTopIcon(Icons.menu, context),
                                 ),
 
                                 const SizedBox(width: 16),

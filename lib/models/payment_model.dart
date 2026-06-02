@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive/hive.dart';
 
 part 'payment_model.g.dart';
@@ -50,4 +51,39 @@ class PaymentModel extends HiveObject {
 
     required this.paymentDate,
   });
+
+  static DateTime _parseDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.parse(value);
+    throw ArgumentError('Invalid date value for PaymentModel date field');
+  }
+
+  factory PaymentModel.fromMap(Map<String, dynamic> map) {
+    return PaymentModel(
+      paymentId: map['paymentId'] as String,
+      studentId: map['studentId'] as String,
+      paymentProofUrl: map['paymentProofUrl'] as String,
+      receiptUrl: map['receiptUrl'] as String,
+      seatNumber: map['seatNumber'] as int,
+      planType: map['planType'] as String,
+      expiryDate: _parseDate(map['expiryDate']),
+      amountPaid: map['amountPaid'] as int,
+      paymentDate: _parseDate(map['paymentDate']),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'paymentId': paymentId,
+      'studentId': studentId,
+      'paymentProofUrl': paymentProofUrl,
+      'receiptUrl': receiptUrl,
+      'seatNumber': seatNumber,
+      'planType': planType,
+      'expiryDate': expiryDate,
+      'amountPaid': amountPaid,
+      'paymentDate': paymentDate,
+    };
+  }
 }

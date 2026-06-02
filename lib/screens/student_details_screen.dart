@@ -7,7 +7,7 @@ import '../models/student_model.dart';
 import '../screens/renew_student_screen.dart';
 import 'edit_student_screen.dart';
 import '../services/student_service.dart';
-import 'upgrade_plan_screen.dart';
+import 'plan_change_screen.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 class StudentDetailsScreen extends StatefulWidget {
@@ -23,6 +23,7 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
   final StudentService studentService = StudentService();
   late StudentModel student;
   List<PaymentModel> payments = [];
+
   @override
   void initState() {
     super.initState();
@@ -107,7 +108,7 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                   this.context,
 
                   MaterialPageRoute(
-                    builder: (_) => UpgradePlanScreen(student: student),
+                    builder: (_) => ChangePlanScreen(student: student),
                   ),
                 );
                 if (!mounted) return;
@@ -115,43 +116,27 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
 
                 setState(() {});
               }
+              if (value == "cancel") {
+                await studentService.cancelMembership(student: student);
+
+                if (!mounted) return;
+
+                refreshStudent();
+
+                setState(() {});
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Membership Cancelled")),
+                );
+              }
 
               if (value == "delete") {
-                await showDialog(
+                showDialog(
                   context: this.context,
-
-                  builder: (_) => AlertDialog(
-                    title: const Text("Delete Student"),
-
-                    content: Text(
-                      "Are you sure you want to delete ${student.name}?",
-                    ),
-
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                        },
-
-                        child: const Text("Cancel"),
-                      ),
-
-                      TextButton(
-                        onPressed: () async {
-                          await studentService.deleteStudent(student: student);
-                          if (!context.mounted) return;
-
-                          Navigator.pop(context);
-                          Navigator.pop(context);
-                        },
-
-                        child: const Text(
-                          "Delete",
-
-                          style: TextStyle(color: Colors.red),
-                        ),
-                      ),
-                    ],
+                  barrierDismissible: false,
+                  builder: (_) => DeleteStudentDialog(
+                    student: student,
+                    studentService: studentService,
                   ),
                 );
               }
@@ -209,7 +194,20 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
 
                     SizedBox(width: 12),
 
-                    Text("Upgrade Plan"),
+                    Text("Change Plan"),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: "cancel",
+
+                child: Row(
+                  children: [
+                    Icon(Icons.upgrade),
+
+                    SizedBox(width: 12),
+
+                    Text("Cancel Plan"),
                   ],
                 ),
               ),
@@ -791,6 +789,76 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
               Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
             ],
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class DeleteStudentDialog extends StatefulWidget {
+  final StudentModel student;
+  final StudentService studentService;
+
+  const DeleteStudentDialog({
+    super.key,
+    required this.student,
+    required this.studentService,
+  });
+
+  @override
+  State<DeleteStudentDialog> createState() => _DeleteStudentDialogState();
+}
+
+class _DeleteStudentDialogState extends State<DeleteStudentDialog> {
+  bool _isDeleting = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text("Delete Student"),
+      content: Text("Are you sure you want to delete ${widget.student.name}?"),
+      actions: [
+        TextButton(
+          onPressed: _isDeleting
+              ? null
+              : () {
+                  Navigator.pop(context);
+                },
+          child: const Text("Cancel"),
+        ),
+        TextButton(
+          onPressed: _isDeleting
+              ? null
+              : () async {
+                  setState(() {
+                    _isDeleting = true;
+                  });
+
+                  try {
+                    await widget.studentService.deleteStudent(
+                      student: widget.student,
+                    );
+                    if (!context.mounted) return;
+
+                    Navigator.pop(context);
+                    Navigator.pop(context);
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    setState(() {
+                      _isDeleting = false;
+                    });
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text("Error: $e")));
+                  }
+                },
+          child: _isDeleting
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text("Delete", style: TextStyle(color: Colors.red)),
         ),
       ],
     );

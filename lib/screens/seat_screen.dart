@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/seat_model.dart';
 import '../services/sync_service.dart';
@@ -28,12 +29,36 @@ class SeatScreen extends StatelessWidget {
           IconButton(
             onPressed: () async {
               final messenger = ScaffoldMessenger.of(context);
+
+              // manual sync cooldown: 2 minutes
+              final prefs = await SharedPreferences.getInstance();
+              final lastManual = prefs.getInt('last_manual_sync_epoch') ?? 0;
+              final nowEpoch = DateTime.now().millisecondsSinceEpoch;
+              const cooldownMs = 2 * 60 * 1000; // 2 minutes
+
+              if (lastManual != 0 && nowEpoch - lastManual < cooldownMs) {
+                final waitSeconds =
+                    ((cooldownMs - (nowEpoch - lastManual)) / 1000).ceil();
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Please wait $waitSeconds seconds before syncing again',
+                    ),
+                  ),
+                );
+                return;
+              }
+
               messenger.showSnackBar(
                 const SnackBar(content: Text('Syncing seats...')),
               );
 
               try {
                 await SyncService.syncSeats();
+                await prefs.setInt(
+                  'last_manual_sync_epoch',
+                  DateTime.now().millisecondsSinceEpoch,
+                );
                 messenger.showSnackBar(
                   const SnackBar(content: Text('Seats synced successfully')),
                 );

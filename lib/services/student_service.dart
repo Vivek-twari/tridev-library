@@ -6,6 +6,7 @@ import 'sync_time_service.dart';
 import 'seat_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import '../services/history_service.dart';
 
 class StudentService {
   final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -258,6 +259,11 @@ class StudentService {
     for (final key in paymentKeys) {
       await paymentsBox.delete(key);
     }
+    await HistoryService.addEntry(
+      text: "Student deleted: ${student.name}",
+
+      type: "deleted",
+    );
 
     /// DELETE STUDENT FIRESTORE
     await FirebaseFirestore.instance
@@ -380,5 +386,46 @@ class StudentService {
     payment.receiptUrl = receiptUrl;
 
     await payment.save();
+  }
+
+  Future<void> cancelMembership({required StudentModel student}) async {
+    try {
+      final updatedAtEpoch = await SyncTimeService.getServerEpoch();
+
+      /// FREE SEAT
+      await SeatService.freeSeat(
+        seatNumber: student.assignedSeat,
+
+        planType: student.planType,
+      );
+
+      /// UPDATE AVAILABILITY
+      await SeatService.updateAvailability(seatNumber: student.assignedSeat);
+
+      /// UPDATE STUDENT
+      final updatedStudent = student.copyWith(
+        isActive: false,
+
+        updatedAtEpoch: updatedAtEpoch,
+      );
+
+      /// HIVE
+      final studentsBox = Hive.box<StudentModel>("studentsBox");
+
+      await studentsBox.put(updatedStudent.id, updatedStudent);
+
+      /// FIRESTORE
+      await FirebaseFirestore.instance
+          .collection("students")
+          .doc(updatedStudent.id)
+          .set(updatedStudent.toMap());
+      await HistoryService.addEntry(
+        text: "Membership cancelled for ${student.name}",
+
+        type: "cancelled",
+      );
+    } catch (e) {
+      rethrow;
+    }
   }
 }

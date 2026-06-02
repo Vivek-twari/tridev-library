@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive/hive.dart';
 
 part 'student_model.g.dart';
@@ -54,13 +55,28 @@ class StudentModel extends HiveObject {
       name: map['name'],
       phone: map['phone'],
       planType: map['planType'],
-      joinDate: DateTime.parse(map['joinDate']),
-      expiryDate: DateTime.parse(map['expiryDate']),
+      joinDate: _parseDate(map['joinDate']),
+      expiryDate: _parseDate(map['expiryDate']),
       isActive: map['isActive'],
       assignedSeat: map['assignedSeat'],
       photoUrl: map['photoUrl'],
       adharId: map['adharId'],
       updatedAtEpoch: map['updatedAtEpoch'],
+    );
+  }
+
+  static DateTime _parseDate(dynamic value) {
+    if (value is Timestamp) {
+      return value.toDate();
+    }
+    if (value is DateTime) {
+      return value;
+    }
+    if (value is String) {
+      return DateTime.parse(value);
+    }
+    throw ArgumentError(
+      'Invalid date value for StudentModel: ${value.runtimeType}',
     );
   }
 

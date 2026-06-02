@@ -1,19 +1,31 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import '../models/student_model.dart';
 import 'sync_time_service.dart';
 import '../models/seat_model.dart';
 import '../models/availability_model.dart';
+import '../models/payment_model.dart';
+import '../models/history_month_model.dart';
 
 class SyncService {
   static final firestore = FirebaseFirestore.instance;
-  static Future<void> syncStudents() async {
+  static Future<void> syncStudents([
+    QuerySnapshot<Map<String, dynamic>>? studentsSnapshot,
+  ]) async {
     final studentsBox = Hive.box<StudentModel>("studentsBox");
 
-    final cloudStudents = await firestore.collection("students").get();
+    final cloudStudents =
+        studentsSnapshot ?? await firestore.collection("students").get();
 
     for (final doc in cloudStudents.docs) {
-      final cloudStudent = StudentModel.fromMap(doc.data());
+      late final StudentModel cloudStudent;
+      try {
+        cloudStudent = StudentModel.fromMap(doc.data());
+      } catch (e) {
+        debugPrint('Skipping invalid student doc ${doc.id}: $e');
+        continue;
+      }
 
       final localStudent = studentsBox.get(cloudStudent.id);
 
@@ -125,11 +137,95 @@ class SyncService {
     }
   }
 
+  static Future<void> syncPayments([
+    QuerySnapshot<Map<String, dynamic>>? studentsSnapshot,
+  ]) async {
+    final paymentsBox = Hive.box<PaymentModel>("paymentsBox");
+
+    final studentsSnap =
+        studentsSnapshot ?? await firestore.collection("students").get();
+
+    // Keep a set of all payment ids present in Firestore to avoid per-doc reads
+    final Set<String> cloudPaymentIds = {};
+
+    for (final studentDoc in studentsSnap.docs) {
+      final studentId = studentDoc.id;
+
+      final paymentsSnapshot = await firestore
+          .collection("students")
+          .doc(studentId)
+          .collection("payments")
+          .get();
+
+      for (final paymentDoc in paymentsSnapshot.docs) {
+        cloudPaymentIds.add(paymentDoc.id);
+
+        final cloudData = Map<String, dynamic>.from(paymentDoc.data());
+        cloudData['paymentId'] = paymentDoc.id;
+        cloudData['studentId'] = studentId;
+
+        final cloudPayment = PaymentModel.fromMap(cloudData);
+        final localPayment = paymentsBox.get(cloudPayment.paymentId);
+
+        if (localPayment == null) {
+          await paymentsBox.put(cloudPayment.paymentId, cloudPayment);
+        }
+      }
+    }
+
+    // Upload any local payments missing from Firestore using the id set (no extra reads)
+    for (final localPayment in paymentsBox.values) {
+      if (!cloudPaymentIds.contains(localPayment.paymentId)) {
+        await firestore
+            .collection("students")
+            .doc(localPayment.studentId)
+            .collection("payments")
+            .doc(localPayment.paymentId)
+            .set(localPayment.toMap());
+      }
+    }
+  }
+
+  static Future<void> syncHistory() async {
+    final historyBox = Hive.box<HistoryMonthModel>("historyBox");
+
+    final cloudSnapshot = await firestore.collection("history").get();
+
+    for (final doc in cloudSnapshot.docs) {
+      final cloud = HistoryMonthModel.fromMap(doc.data());
+
+      final local = historyBox.get(cloud.monthId);
+
+      if (local == null) {
+        await historyBox.put(cloud.monthId, cloud);
+        continue;
+      }
+
+      if (SyncTimeService.nearlyEqual(
+        cloud.updatedAtEpoch,
+        local.updatedAtEpoch,
+      )) {
+        continue;
+      }
+
+      if (cloud.updatedAtEpoch > local.updatedAtEpoch) {
+        await historyBox.put(cloud.monthId, cloud);
+      } else {
+        await firestore
+            .collection("history")
+            .doc(local.monthId)
+            .set(local.toMap());
+      }
+    }
+  }
+
   static Future<void> syncAll() async {
     await syncStudents();
 
     await syncSeats();
 
     await syncAvailability();
+    await syncHistory();
+    await syncPayments();
   }
 }
