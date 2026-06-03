@@ -56,9 +56,13 @@ class ReceiptScreen extends StatelessWidget {
       return null;
     }
 
-    await Share.shareXFiles([
-      XFile(receiptFile.path),
-    ], text: "TRIDEV LIBRARY Receipt");
+    // Use the new SharePlus instance and wrap your configuration inside ShareParams
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(receiptFile.path)],
+        text: "TRIDEV LIBRARY Receipt",
+      ),
+    );
 
     return receiptFile;
   }

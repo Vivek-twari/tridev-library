@@ -357,7 +357,7 @@ class _ChangePlanScreenState extends State<ChangePlanScreen> {
               const SizedBox(height: 18),
 
               DropdownButtonFormField<int>(
-                value: selectedSeat,
+                initialValue: selectedSeat,
 
                 decoration: InputDecoration(
                   labelText: selectedPlan != null

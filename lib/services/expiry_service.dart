@@ -53,11 +53,7 @@ class ExpiryService {
 
             type: "cancelled",
           );
-
-          print("Expired student processed: ${student.name}");
-        } catch (e) {
-          print("Failed to process expired student ${student.name}: $e");
-        }
+        } catch (e) {}
       }
     }
   }

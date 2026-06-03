@@ -125,7 +125,7 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
 
                 setState(() {});
 
-                ScaffoldMessenger.of(context).showSnackBar(
+                ScaffoldMessenger.of(this.context).showSnackBar(
                   const SnackBar(content: Text("Membership Cancelled")),
                 );
               }

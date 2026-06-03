@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-
+import '../services/sync_service.dart';
+import '../services/expiry_service.dart';
 import 'student_list_screen.dart';
 import 'seat_screen.dart';
 
@@ -14,6 +15,19 @@ class _HomeScreenState extends State<HomeScreen> {
   int selectedIndex = 0;
 
   final List<Widget> screens = [const StudentListScreen(), const SeatScreen()];
+
+  Future<void> initializeApp() async {
+    await SyncService.syncAll();
+
+    await ExpiryService.checkExpiredStudents();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    initializeApp();
+  }
 
   @override
   Widget build(BuildContext context) {
