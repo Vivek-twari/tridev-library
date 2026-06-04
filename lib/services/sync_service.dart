@@ -18,25 +18,31 @@ class SyncService {
     final cloudStudents =
         studentsSnapshot ?? await firestore.collection("students").get();
 
+    /// CLOUD IDS
+    final cloudIds = cloudStudents.docs.map((e) => e.id).toSet();
+
+    /// CLOUD → LOCAL
     for (final doc in cloudStudents.docs) {
       late final StudentModel cloudStudent;
+
       try {
         cloudStudent = StudentModel.fromMap(doc.data());
       } catch (e) {
         debugPrint('Skipping invalid student doc ${doc.id}: $e');
+
         continue;
       }
 
       final localStudent = studentsBox.get(cloudStudent.id);
 
-      /// local missing
+      /// LOCAL MISSING
       if (localStudent == null) {
         await studentsBox.put(cloudStudent.id, cloudStudent);
 
         continue;
       }
 
-      /// same timestamps
+      /// SAME TIMESTAMPS
       if (SyncTimeService.nearlyEqual(
         cloudStudent.updatedAtEpoch,
 
@@ -45,12 +51,22 @@ class SyncService {
         continue;
       }
 
-      /// cloud newer
+      /// CLOUD NEWER
       if (cloudStudent.updatedAtEpoch > localStudent.updatedAtEpoch) {
         await studentsBox.put(cloudStudent.id, cloudStudent);
       }
-      /// local newer
+      /// LOCAL NEWER
       else {
+        await firestore
+            .collection("students")
+            .doc(localStudent.id)
+            .set(localStudent.toMap());
+      }
+    }
+
+    /// LOCAL ONLY → UPLOAD
+    for (final localStudent in studentsBox.values) {
+      if (!cloudIds.contains(localStudent.id)) {
         await firestore
             .collection("students")
             .doc(localStudent.id)
@@ -104,18 +120,31 @@ class SyncService {
 
     final doc = await firestore.collection("availability").doc("main").get();
 
-    if (!doc.exists) return;
+    final localAvailability = availabilityBox.get("main");
+
+    /// CLOUD MISSING
+    if (!doc.exists) {
+      /// LOCAL EXISTS → UPLOAD
+      if (localAvailability != null) {
+        await firestore
+            .collection("availability")
+            .doc("main")
+            .set(localAvailability.toMap());
+      }
+
+      return;
+    }
 
     final cloudAvailability = AvailabilityModel.fromMap(doc.data()!);
 
-    final localAvailability = availabilityBox.get("main");
-
+    /// LOCAL MISSING
     if (localAvailability == null) {
       await availabilityBox.put("main", cloudAvailability);
 
       return;
     }
 
+    /// SAME TIMESTAMPS
     if (SyncTimeService.nearlyEqual(
       cloudAvailability.updatedAtEpoch,
 
@@ -124,11 +153,11 @@ class SyncService {
       return;
     }
 
-    /// cloud newer
+    /// CLOUD NEWER
     if (cloudAvailability.updatedAtEpoch > localAvailability.updatedAtEpoch) {
       await availabilityBox.put("main", cloudAvailability);
     }
-    /// local newer
+    /// LOCAL NEWER
     else {
       await firestore
           .collection("availability")

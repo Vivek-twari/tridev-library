@@ -12,7 +12,20 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final emailController = TextEditingController();
+
+  final passwordController = TextEditingController();
+
   bool isLoading = false;
+
+  @override
+  void dispose() {
+    emailController.dispose();
+
+    passwordController.dispose();
+
+    super.dispose();
+  }
 
   Future<void> login() async {
     try {
@@ -20,7 +33,11 @@ class _LoginScreenState extends State<LoginScreen> {
         isLoading = true;
       });
 
-      await AuthService.login();
+      await AuthService.login(
+        email: emailController.text.trim(),
+
+        password: passwordController.text,
+      );
 
       if (!mounted) return;
 
@@ -124,6 +141,50 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
 
                 const SizedBox(height: 40),
+
+                TextField(
+                  controller: emailController,
+
+                  keyboardType: TextInputType.emailAddress,
+
+                  decoration: InputDecoration(
+                    hintText: "Email",
+
+                    filled: true,
+
+                    fillColor: Colors.grey.shade100,
+
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                TextField(
+                  controller: passwordController,
+
+                  obscureText: true,
+
+                  decoration: InputDecoration(
+                    hintText: "Password",
+
+                    filled: true,
+
+                    fillColor: Colors.grey.shade100,
+
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 32),
 
                 SizedBox(
                   width: double.infinity,

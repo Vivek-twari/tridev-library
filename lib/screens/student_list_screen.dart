@@ -1,11 +1,77 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/student_model.dart';
+import '../services/sync_service.dart';
 import 'add_student_screen.dart';
+import 'renew_student_screen.dart';
+import 'student_details_screen.dart';
+import 'analytics_screen.dart';
 
-class StudentListScreen extends StatelessWidget {
+class StudentListScreen extends StatefulWidget {
   const StudentListScreen({super.key});
+
+  @override
+  State<StudentListScreen> createState() => _StudentListScreenState();
+}
+
+class _StudentListScreenState extends State<StudentListScreen> {
+  late TextEditingController _searchController;
+  bool _showSearchBar = false;
+  Set<String> selectedPlanTypes = {};
+  String selectedStatusFilter = 'All';
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _syncStudents(BuildContext context) async {
+    // prevent manual spamming: 2 minute cooldown
+    final prefs = await SharedPreferences.getInstance();
+    final lastManual = prefs.getInt('last_manual_sync_epoch') ?? 0;
+    final nowEpoch = DateTime.now().millisecondsSinceEpoch;
+    const cooldownMs = 2 * 60 * 1000; // 2 minutes
+
+    if (lastManual != 0 && nowEpoch - lastManual < cooldownMs) {
+      final waitSeconds = ((cooldownMs - (nowEpoch - lastManual)) / 1000)
+          .ceil();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Please wait $waitSeconds seconds before syncing again',
+          ),
+        ),
+      );
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Syncing students...')),
+    );
+
+    try {
+      await SyncService.syncStudents();
+      await prefs.setInt(
+        'last_manual_sync_epoch',
+        DateTime.now().millisecondsSinceEpoch,
+      );
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Students synced successfully')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+    }
+  }
 
   // Responsive sizing based on screen width
   double getResponsivePadding(BuildContext context) {
@@ -53,7 +119,50 @@ class StudentListScreen extends StatelessWidget {
     final responsivePadding = getResponsivePadding(context);
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: const Color(0xFFF5F7FB),
+      drawer: Drawer(
+        child: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                height: 64,
+                color: const Color(0xFF2563EB),
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: const Text(
+                  'Menu',
+                  style: TextStyle(color: Colors.white, fontSize: 18),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.sync),
+                title: const Text('Sync Students'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _syncStudents(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.analytics),
+
+                title: const Text('Analytics'),
+
+                onTap: () async {
+                  Navigator.pop(context);
+
+                  await Navigator.push(
+                    context,
+
+                    MaterialPageRoute(builder: (_) => const AnalyticsScreen()),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
 
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFF2563EB),
@@ -77,7 +186,41 @@ class StudentListScreen extends StatelessWidget {
           builder: (context, box, _) {
             final students = box.values.toList();
 
-            int activeCount = students.where((e) => e.isActive).length;
+            // Filter students based on search query and plan types
+            final filteredStudents = students.where((student) {
+              final query = _searchController.text.toLowerCase();
+
+              // Search filter
+              bool matchesSearch =
+                  student.name.toLowerCase().contains(query) ||
+                  student.phone.contains(query) ||
+                  student.assignedSeat.toString().contains(query);
+
+              // Plan type filter
+              bool matchesPlan =
+                  selectedPlanTypes.isEmpty ||
+                  selectedPlanTypes.contains(student.planType);
+
+              // Status filter
+              final now = DateTime.now();
+              final isExpired = student.expiryDate.isBefore(now);
+              final diffDays = student.expiryDate.difference(now).inDays;
+              final isExpiringSoon =
+                  !isExpired && diffDays <= 5 && diffDays >= 0;
+
+              bool matchesStatus = true;
+              if (selectedStatusFilter == 'Expired') {
+                matchesStatus = isExpired;
+              } else if (selectedStatusFilter == 'Expiring Soon') {
+                matchesStatus = isExpiringSoon;
+              }
+
+              return matchesSearch && matchesPlan && matchesStatus;
+            }).toList();
+
+            int expiredCount = students
+                .where((e) => e.expiryDate.isBefore(DateTime.now()))
+                .length;
 
             int expiringSoon = students.where((e) {
               final difference = e.expiryDate.difference(DateTime.now()).inDays;
@@ -85,30 +228,91 @@ class StudentListScreen extends StatelessWidget {
               return difference <= 5 && difference >= 0;
             }).length;
 
-            return SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                horizontal: responsivePadding,
-                vertical: responsivePadding,
-              ),
+            return CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: responsivePadding,
+                    vertical: responsivePadding,
+                  ),
 
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                  sliver: SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        /// APP BAR
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
 
-                children: [
-                  /// APP BAR
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: () =>
+                                      _scaffoldKey.currentState?.openDrawer(),
+                                  child: buildTopIcon(Icons.menu, context),
+                                ),
 
-                    children: [
-                      Row(
-                        children: [
+                                const SizedBox(width: 16),
+
+                                Text(
+                                  "Students",
+
+                                  style: TextStyle(
+                                    fontSize: getResponsiveHeaderFontSize(
+                                      context,
+                                    ),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _showSearchBar = !_showSearchBar;
+                                      if (!_showSearchBar) {
+                                        _searchController.clear();
+                                      }
+                                    });
+                                  },
+                                  child: buildTopIcon(Icons.search, context),
+                                ),
+
+                                const SizedBox(width: 12),
+
+                                GestureDetector(
+                                  onTap: () {
+                                    _showPlanFilterBottomSheet(
+                                      context,
+                                      box.values.toList(),
+                                    );
+                                  },
+                                  child: buildTopIcon(Icons.tune, context),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 26),
+
+                        /// SEARCH BAR
+                        if (_showSearchBar)
                           Container(
-                            padding: EdgeInsets.all(isSmallScreen ? 10 : 12),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: isSmallScreen ? 12 : 18,
+                            ),
+
+                            height: isMediumScreen ? 56 : 64,
 
                             decoration: BoxDecoration(
                               color: Colors.white,
 
-                              borderRadius: BorderRadius.circular(18),
+                              borderRadius: BorderRadius.circular(24),
 
                               boxShadow: const [
                                 BoxShadow(
@@ -118,170 +322,147 @@ class StudentListScreen extends StatelessWidget {
                               ],
                             ),
 
-                            child: Icon(
-                              Icons.menu,
-                              size: isSmallScreen ? 20 : 24,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.search,
+                                  color: Colors.grey.shade500,
+                                  size: isSmallScreen ? 22 : 28,
+                                ),
+
+                                const SizedBox(width: 14),
+
+                                Expanded(
+                                  child: TextField(
+                                    controller: _searchController,
+                                    onChanged: (value) {
+                                      setState(() {});
+                                    },
+                                    decoration: InputDecoration(
+                                      hintText:
+                                          "Search by name, phone or seat no.",
+                                      hintStyle: TextStyle(
+                                        color: Colors.grey.shade500,
+                                        fontSize: isSmallScreen ? 12 : 16,
+                                      ),
+                                      border: InputBorder.none,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
 
-                          const SizedBox(width: 16),
+                        if (_showSearchBar) const SizedBox(height: 24),
 
-                          Text(
-                            "Students",
+                        /// STATS
+                        Row(
+                          children: [
+                            Expanded(
+                              child: buildStatCard(
+                                icon: Icons.people,
+                                value: students.length.toString(),
 
-                            style: TextStyle(
-                              fontSize: getResponsiveHeaderFontSize(context),
-                              fontWeight: FontWeight.bold,
+                                label: "Total Students",
+
+                                color: const Color(0xFF2563EB),
+
+                                context: context,
+                              ),
                             ),
+
+                            const SizedBox(width: 12),
+
+                            Expanded(
+                              child: buildStatCard(
+                                icon: Icons.check_circle,
+
+                                value: expiredCount.toString(),
+
+                                label: "Expired",
+
+                                color: Colors.red,
+
+                                context: context,
+                              ),
+                            ),
+
+                            const SizedBox(width: 12),
+
+                            Expanded(
+                              child: buildStatCard(
+                                icon: Icons.timer_outlined,
+
+                                value: expiringSoon.toString(),
+
+                                label: "Expiring Soon",
+
+                                color: const Color(0xFFF59E0B),
+
+                                context: context,
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        /// FILTERS
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+
+                          child: Row(
+                            children: [
+                              buildFilterChip(
+                                "All",
+                                selectedStatusFilter == 'All',
+                                const Color(0xFF0B2A6F),
+                                context,
+                                () {
+                                  setState(() {
+                                    selectedStatusFilter = 'All';
+                                  });
+                                },
+                              ),
+
+                              buildFilterChip(
+                                "Expiring Soon",
+                                selectedStatusFilter == 'Expiring Soon',
+                                const Color(0xFFF59E0B),
+                                context,
+                                () {
+                                  setState(() {
+                                    selectedStatusFilter = 'Expiring Soon';
+                                  });
+                                },
+                              ),
+
+                              buildFilterChip(
+                                "Expired",
+                                selectedStatusFilter == 'Expired',
+                                Colors.red,
+                                context,
+                                () {
+                                  setState(() {
+                                    selectedStatusFilter = 'Expired';
+                                  });
+                                },
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-
-                      Row(
-                        children: [
-                          buildTopIcon(Icons.search, context),
-
-                          const SizedBox(width: 12),
-
-                          buildTopIcon(Icons.tune, context),
-                        ],
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 26),
-
-                  /// SEARCH BAR
-                  Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: isSmallScreen ? 12 : 18,
-                    ),
-
-                    height: isMediumScreen ? 56 : 64,
-
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-
-                      borderRadius: BorderRadius.circular(24),
-
-                      boxShadow: const [
-                        BoxShadow(blurRadius: 10, color: Colors.black12),
-                      ],
-                    ),
-
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.search,
-                          color: Colors.grey.shade500,
-                          size: isSmallScreen ? 22 : 28,
                         ),
 
-                        const SizedBox(width: 14),
-
-                        Text(
-                          "Search by name, phone or seat no.",
-
-                          style: TextStyle(
-                            color: Colors.grey.shade500,
-
-                            fontSize: isSmallScreen ? 12 : 16,
-                          ),
-                        ),
+                        const SizedBox(height: 26),
                       ],
                     ),
                   ),
+                ),
 
-                  const SizedBox(height: 24),
+                // Students list as its own sliver
+                SliverList(
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final student = filteredStudents[index];
 
-                  /// STATS
-                  Row(
-                    children: [
-                      Expanded(
-                        child: buildStatCard(
-                          icon: Icons.people,
-                          value: students.length.toString(),
-
-                          label: "Total Students",
-
-                          color: const Color(0xFF2563EB),
-
-                          context: context,
-                        ),
-                      ),
-
-                      const SizedBox(width: 14),
-
-                      Expanded(
-                        child: buildStatCard(
-                          icon: Icons.check_circle,
-
-                          value: activeCount.toString(),
-
-                          label: "Active",
-
-                          color: const Color(0xFF16A34A),
-
-                          context: context,
-                        ),
-                      ),
-
-                      const SizedBox(width: 14),
-
-                      Expanded(
-                        child: buildStatCard(
-                          icon: Icons.timer_outlined,
-
-                          value: expiringSoon.toString(),
-
-                          label: "Expiring Soon",
-
-                          color: const Color(0xFFF59E0B),
-
-                          context: context,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  /// FILTERS
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-
-                    child: Row(
-                      children: [
-                        buildFilterChip(
-                          "All",
-                          true,
-                          const Color(0xFF0B2A6F),
-                          context,
-                        ),
-
-                        buildFilterChip(
-                          "Active",
-                          false,
-                          const Color(0xFF16A34A),
-                          context,
-                        ),
-
-                        buildFilterChip(
-                          "Expiring Soon",
-                          false,
-                          const Color(0xFFF59E0B),
-                          context,
-                        ),
-
-                        buildFilterChip("Expired", false, Colors.red, context),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 26),
-
-                  /// STUDENTS
-                  ...students.map((student) {
                     bool expired = student.expiryDate.isBefore(DateTime.now());
 
                     bool expiringSoon =
@@ -303,239 +484,363 @@ class StudentListScreen extends StatelessWidget {
                       status = "Expiring Soon";
                     }
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 18),
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
 
-                      decoration: BoxDecoration(
-                        color: Colors.white,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                StudentDetailsScreen(student: student),
+                          ),
+                        );
+                      },
 
-                        borderRadius: BorderRadius.circular(28),
-
-                        boxShadow: const [
-                          BoxShadow(blurRadius: 12, color: Colors.black12),
-                        ],
-                      ),
-
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 6,
-                            height: isMediumScreen ? 130 : 150,
-
-                            decoration: BoxDecoration(
-                              color: sideColor,
-
-                              borderRadius: const BorderRadius.only(
-                                topLeft: Radius.circular(28),
-
-                                bottomLeft: Radius.circular(28),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 18),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(28),
+                          boxShadow: const [
+                            BoxShadow(blurRadius: 12, color: Colors.black12),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 6,
+                              height: isMediumScreen ? 130 : 150,
+                              decoration: BoxDecoration(
+                                color: sideColor,
+                                borderRadius: const BorderRadius.only(
+                                  topLeft: Radius.circular(28),
+                                  bottomLeft: Radius.circular(28),
+                                ),
                               ),
                             ),
-                          ),
-
-                          Expanded(
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: isSmallScreen ? 10 : 16,
-                                vertical: isSmallScreen ? 10 : 14,
-                              ),
-
-                              child: Row(
-                                children: [
-                                  /// PROFILE
-                                  CircleAvatar(
-                                    radius: getResponsiveAvatarRadius(context),
-
-                                    backgroundColor: sideColor.withValues(
-                                      alpha: 0.12,
+                            Expanded(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: isSmallScreen ? 10 : 16,
+                                  vertical: isSmallScreen ? 10 : 14,
+                                ),
+                                child: Row(
+                                  children: [
+                                    /// PROFILE
+                                    CircleAvatar(
+                                      radius: 38,
+                                      backgroundImage: student.photoUrl != null
+                                          ? CachedNetworkImageProvider(
+                                              student.photoUrl!,
+                                            )
+                                          : null,
+                                      child: student.photoUrl == null
+                                          ? const Icon(Icons.person)
+                                          : null,
                                     ),
+                                    const SizedBox(width: 14),
 
-                                    backgroundImage: student.photoUrl != null
-                                        ? NetworkImage(student.photoUrl!)
-                                        : null,
-
-                                    child: student.photoUrl == null
-                                        ? Icon(
-                                            Icons.person,
-
-                                            size: getResponsiveAvatarRadius(
-                                              context,
-                                            ),
-
-                                            color: sideColor,
-                                          )
-                                        : null,
-                                  ),
-
-                                  const SizedBox(width: 14),
-
-                                  /// INFO
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-
-                                      children: [
-                                        Text(
-                                          student.name,
-
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-
-                                          style: TextStyle(
-                                            fontSize: getResponsiveNameFontSize(
-                                              context,
-                                            ),
-
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-
-                                        const SizedBox(height: 6),
-
-                                        buildInfoRow(
-                                          Icons.phone,
-
-                                          student.phone,
-
-                                          context,
-                                        ),
-
-                                        const SizedBox(height: 6),
-
-                                        buildInfoRow(
-                                          Icons.chair,
-
-                                          "Seat ${student.assignedSeat} • ${student.planType}",
-
-                                          context,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  const SizedBox(width: 10),
-
-                                  /// RIGHT SIDE
-                                  SizedBox(
-                                    width: getResponsiveRightSideWidth(context),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-
-                                      children: [
-                                        Container(
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal: isSmallScreen ? 8 : 12,
-
-                                            vertical: isSmallScreen ? 4 : 6,
-                                          ),
-
-                                          decoration: BoxDecoration(
-                                            color: sideColor.withValues(
-                                              alpha: 0.12,
-                                            ),
-
-                                            borderRadius: BorderRadius.circular(
-                                              24,
-                                            ),
-                                          ),
-
-                                          child: Text(
-                                            status,
-
+                                    /// INFO
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            student.name,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-
                                             style: TextStyle(
-                                              color: sideColor,
-
+                                              fontSize:
+                                                  getResponsiveNameFontSize(
+                                                    context,
+                                                  ),
                                               fontWeight: FontWeight.bold,
-
-                                              fontSize: isSmallScreen ? 10 : 12,
                                             ),
                                           ),
-                                        ),
-
-                                        SizedBox(
-                                          height: isSmallScreen ? 8 : 12,
-                                        ),
-
-                                        Text(
-                                          "Expires on",
-
-                                          style: TextStyle(
-                                            color: Colors.grey.shade600,
-
-                                            fontSize: isSmallScreen ? 9 : 11,
+                                          const SizedBox(height: 6),
+                                          buildInfoRow(
+                                            Icons.phone,
+                                            student.phone,
+                                            context,
                                           ),
-                                        ),
-
-                                        SizedBox(height: isSmallScreen ? 2 : 4),
-
-                                        Text(
-                                          "${student.expiryDate.day}/${student.expiryDate.month}/${student.expiryDate.year}",
-
-                                          style: TextStyle(
-                                            color: sideColor,
-
-                                            fontWeight: FontWeight.bold,
-
-                                            fontSize: isSmallScreen ? 12 : 14,
+                                          const SizedBox(height: 6),
+                                          buildInfoRow(
+                                            Icons.chair,
+                                            "Seat ${student.assignedSeat} • ${student.planType}",
+                                            context,
                                           ),
-                                        ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
 
-                                        SizedBox(
-                                          height: isSmallScreen ? 8 : 12,
-                                        ),
-
-                                        SizedBox(
-                                          height: isSmallScreen ? 34 : 38,
-
-                                          child: OutlinedButton(
-                                            style: OutlinedButton.styleFrom(
-                                              side: const BorderSide(
-                                                color: Color(0xFF2563EB),
-                                              ),
-
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-
-                                              padding: EdgeInsets.zero,
+                                    /// RIGHT SIDE
+                                    SizedBox(
+                                      width: getResponsiveRightSideWidth(
+                                        context,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          Container(
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: isSmallScreen
+                                                  ? 8
+                                                  : 12,
+                                              vertical: isSmallScreen ? 4 : 6,
                                             ),
-
-                                            onPressed: () {},
-
+                                            decoration: BoxDecoration(
+                                              color: sideColor.withValues(
+                                                alpha: 0.12,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(24),
+                                            ),
                                             child: Text(
-                                              "Renew",
-
+                                              status,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
+                                                color: sideColor,
+                                                fontWeight: FontWeight.bold,
                                                 fontSize: isSmallScreen
                                                     ? 10
                                                     : 12,
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      ],
+                                          SizedBox(
+                                            height: isSmallScreen ? 8 : 12,
+                                          ),
+                                          Text(
+                                            "Expires on",
+                                            style: TextStyle(
+                                              color: Colors.grey.shade600,
+                                              fontSize: isSmallScreen ? 9 : 11,
+                                            ),
+                                          ),
+                                          SizedBox(
+                                            height: isSmallScreen ? 2 : 4,
+                                          ),
+                                          Text(
+                                            "${student.expiryDate.day}/${student.expiryDate.month}/${student.expiryDate.year}",
+                                            style: TextStyle(
+                                              color: sideColor,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: isSmallScreen ? 12 : 14,
+                                            ),
+                                          ),
+                                          SizedBox(
+                                            height: isSmallScreen ? 8 : 12,
+                                          ),
+                                          SizedBox(
+                                            height: isSmallScreen ? 34 : 38,
+                                            child: OutlinedButton(
+                                              style: OutlinedButton.styleFrom(
+                                                side: const BorderSide(
+                                                  color: Color(0xFF2563EB),
+                                                ),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                                padding: EdgeInsets.zero,
+                                              ),
+                                              onPressed: () {
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        RenewStudentScreen(
+                                                          student: student,
+                                                        ),
+                                                  ),
+                                                );
+                                              },
+                                              child: Text(
+                                                "Renew",
+                                                style: TextStyle(
+                                                  fontSize: isSmallScreen
+                                                      ? 10
+                                                      : 12,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     );
-                  }),
-                ],
-              ),
+                  }, childCount: filteredStudents.length),
+                ),
+              ],
             );
           },
         ),
       ),
+    );
+  }
+
+  void _showPlanFilterBottomSheet(
+    BuildContext context,
+    List<StudentModel> students,
+  ) {
+    // Get unique plan types
+    // Define all available plan types
+    final planTypes = ['Morning', 'Evening', 'Day', 'Night', 'Prime'];
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Filter by Plan Type',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 0),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: planTypes.length,
+                      itemBuilder: (context, index) {
+                        final planType = planTypes[index];
+                        final isSelected = selectedPlanTypes.contains(planType);
+
+                        return GestureDetector(
+                          onTap: () {
+                            setModalState(() {
+                              if (isSelected) {
+                                selectedPlanTypes.remove(planType);
+                              } else {
+                                selectedPlanTypes.add(planType);
+                              }
+                            });
+                            setState(() {});
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            color: isSelected
+                                ? const Color(0xFF2563EB).withValues(alpha: 0.1)
+                                : Colors.transparent,
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? const Color(0xFF2563EB)
+                                          : Colors.grey.shade300,
+                                      width: 2,
+                                    ),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: isSelected
+                                      ? const Icon(
+                                          Icons.check,
+                                          size: 16,
+                                          color: Color(0xFF2563EB),
+                                        )
+                                      : null,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    planType,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w600
+                                          : FontWeight.w400,
+                                      color: isSelected
+                                          ? const Color(0xFF2563EB)
+                                          : Colors.black,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              setModalState(() {
+                                selectedPlanTypes.clear();
+                              });
+                              setState(() {});
+                              Navigator.pop(context);
+                            },
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF2563EB)),
+                            ),
+                            child: const Text('Clear All'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2563EB),
+                            ),
+                            child: const Text('Done'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -569,12 +874,12 @@ class StudentListScreen extends StatelessWidget {
     final isSmall = MediaQuery.of(context).size.width < 360;
 
     return Container(
-      padding: EdgeInsets.all(isSmall ? 14 : 18),
+      padding: EdgeInsets.all(isSmall ? 10 : 12),
 
       decoration: BoxDecoration(
         color: Colors.white,
 
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(20),
 
         boxShadow: const [BoxShadow(blurRadius: 10, color: Colors.black12)],
       ),
@@ -584,7 +889,7 @@ class StudentListScreen extends StatelessWidget {
 
         children: [
           Container(
-            padding: EdgeInsets.all(isSmall ? 10 : 14),
+            padding: EdgeInsets.all(isSmall ? 8 : 10),
 
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.12),
@@ -592,29 +897,29 @@ class StudentListScreen extends StatelessWidget {
               shape: BoxShape.circle,
             ),
 
-            child: Icon(icon, color: color, size: isSmall ? 20 : 24),
+            child: Icon(icon, color: color, size: isSmall ? 16 : 18),
           ),
 
-          SizedBox(height: isSmall ? 12 : 16),
+          SizedBox(height: isSmall ? 8 : 10),
 
           Text(
             value,
 
             style: TextStyle(
-              fontSize: isSmall ? 24 : 34,
+              fontSize: isSmall ? 18 : 22,
               fontWeight: FontWeight.bold,
               color: color,
             ),
           ),
 
-          const SizedBox(height: 6),
+          SizedBox(height: isSmall ? 3 : 4),
 
           Text(
             label,
 
             style: TextStyle(
               color: Colors.grey.shade700,
-              fontSize: isSmall ? 12 : 16,
+              fontSize: isSmall ? 10 : 12,
             ),
           ),
         ],
@@ -627,33 +932,37 @@ class StudentListScreen extends StatelessWidget {
     bool selected,
     Color color,
     BuildContext context,
+    VoidCallback onTap,
   ) {
     final isSmall = MediaQuery.of(context).size.width < 360;
 
-    return Container(
-      margin: EdgeInsets.only(right: isSmall ? 10 : 14),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: EdgeInsets.only(right: isSmall ? 10 : 14),
 
-      padding: EdgeInsets.symmetric(
-        horizontal: isSmall ? 18 : 24,
-        vertical: isSmall ? 10 : 14,
-      ),
+        padding: EdgeInsets.symmetric(
+          horizontal: isSmall ? 18 : 24,
+          vertical: isSmall ? 10 : 14,
+        ),
 
-      decoration: BoxDecoration(
-        color: selected ? color : Colors.white,
+        decoration: BoxDecoration(
+          color: selected ? color : Colors.white,
 
-        borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(24),
 
-        border: Border.all(color: selected ? color : Colors.grey.shade300),
-      ),
+          border: Border.all(color: selected ? color : Colors.grey.shade300),
+        ),
 
-      child: Text(
-        text,
+        child: Text(
+          text,
 
-        style: TextStyle(
-          color: selected ? Colors.white : color,
+          style: TextStyle(
+            color: selected ? Colors.white : color,
 
-          fontWeight: FontWeight.w600,
-          fontSize: isSmall ? 12 : 16,
+            fontWeight: FontWeight.w600,
+            fontSize: isSmall ? 12 : 16,
+          ),
         ),
       ),
     );

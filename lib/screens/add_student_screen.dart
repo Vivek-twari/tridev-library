@@ -102,13 +102,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   DateTime get calculatedExpiryDate {
     if (durationType == "Months") {
-      return DateTime(
-        selectedJoinDate.year,
-
-        selectedJoinDate.month + selectedMonths,
-
-        selectedJoinDate.day,
-      );
+      return addMonths(selectedJoinDate, selectedMonths);
     }
 
     return selectedJoinDate.add(Duration(days: customDays));
@@ -367,6 +361,20 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         selectedJoinDate = pickedDate;
       });
     }
+  }
+
+  DateTime addMonths(DateTime date, int months) {
+    final newMonth = date.month + months;
+
+    final year = date.year + ((newMonth - 1) ~/ 12);
+
+    final month = ((newMonth - 1) % 12) + 1;
+
+    final lastDay = DateTime(year, month + 1, 0).day;
+
+    final day = date.day > lastDay ? lastDay : date.day;
+
+    return DateTime(year, month, day);
   }
 
   @override

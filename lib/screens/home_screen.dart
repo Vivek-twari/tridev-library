@@ -17,9 +17,19 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Widget> screens = [const StudentListScreen(), const SeatScreen()];
 
   Future<void> initializeApp() async {
-    await SyncService.syncAll();
+    try {
+      await SyncService.syncAll();
 
-    await ExpiryService.checkExpiredStudents();
+      await ExpiryService.checkExpiredStudents();
+    } catch (e) {
+      debugPrint("Initialization Error: $e");
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Sync failed: $e")));
+    }
   }
 
   @override

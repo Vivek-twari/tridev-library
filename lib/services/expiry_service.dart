@@ -53,7 +53,9 @@ class ExpiryService {
 
             type: "cancelled",
           );
-        } catch (e) {}
+        } catch (e) {
+          // Handle errors (e.g., log them)
+        }
       }
     }
   }
