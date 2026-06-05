@@ -64,13 +64,11 @@ class SyncService {
       }
     }
 
-    /// LOCAL ONLY → UPLOAD
-    for (final localStudent in studentsBox.values) {
+    /// LOCAL ONLY → DELETE
+    /// LOCAL ONLY → DELETE
+    for (final localStudent in studentsBox.values.toList()) {
       if (!cloudIds.contains(localStudent.id)) {
-        await firestore
-            .collection("students")
-            .doc(localStudent.id)
-            .set(localStudent.toMap());
+        await studentsBox.delete(localStudent.id);
       }
     }
   }
