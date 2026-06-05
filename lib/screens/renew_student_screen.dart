@@ -86,14 +86,24 @@ class _RenewStudentScreenState extends State<RenewStudentScreen> {
     if (useCustomDays) {
       calculatedExpiryDate = baseDate.add(Duration(days: customDays));
     } else {
-      calculatedExpiryDate = DateTime(
-        baseDate.year,
-        baseDate.month + selectedMonths,
-        baseDate.day,
-      );
+      calculatedExpiryDate = addMonths(baseDate, selectedMonths);
     }
 
     setState(() {});
+  }
+
+  DateTime addMonths(DateTime date, int months) {
+    final newMonth = date.month + months;
+
+    final year = date.year + ((newMonth - 1) ~/ 12);
+
+    final month = ((newMonth - 1) % 12) + 1;
+
+    final lastDay = DateTime(year, month + 1, 0).day;
+
+    final day = date.day > lastDay ? lastDay : date.day;
+
+    return DateTime(year, month, day);
   }
 
   void setLoading(bool value) {
