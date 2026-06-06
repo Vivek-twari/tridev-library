@@ -203,6 +203,19 @@ class SyncService {
     // Upload any local payments missing from Firestore using the id set (no extra reads)
     for (final localPayment in paymentsBox.values) {
       if (!cloudPaymentIds.contains(localPayment.paymentId)) {
+        final studentDoc = await firestore
+            .collection("students")
+            .doc(localPayment.studentId)
+            .get();
+
+        /// STUDENT NOT FOUND
+
+        if (!studentDoc.exists) {
+          await paymentsBox.delete(localPayment.paymentId);
+
+          continue;
+        }
+
         await firestore
             .collection("students")
             .doc(localPayment.studentId)
