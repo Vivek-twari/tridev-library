@@ -73,6 +73,51 @@ class _StudentListScreenState extends State<StudentListScreen> {
     }
   }
 
+  Future<void> _syncAll(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final lastManual = prefs.getInt('last_manual_sync_all_epoch') ?? 0;
+
+    final nowEpoch = DateTime.now().millisecondsSinceEpoch;
+
+    const cooldownMs = 2 * 60 * 1000;
+
+    /// COOLDOWN
+    if (lastManual != 0 && nowEpoch - lastManual < cooldownMs) {
+      final waitSeconds = ((cooldownMs - (nowEpoch - lastManual)) / 1000)
+          .ceil();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Please wait $waitSeconds seconds before syncing again',
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    messenger.showSnackBar(const SnackBar(content: Text('Syncing app...')));
+
+    try {
+      await SyncService.syncAll();
+
+      await prefs.setInt(
+        'last_manual_sync_all_epoch',
+        DateTime.now().millisecondsSinceEpoch,
+      );
+
+      messenger.showSnackBar(
+        const SnackBar(content: Text('App synced successfully')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+    }
+  }
+
   // Responsive sizing based on screen width
   double getResponsivePadding(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
@@ -157,6 +202,16 @@ class _StudentListScreenState extends State<StudentListScreen> {
 
                     MaterialPageRoute(builder: (_) => const AnalyticsScreen()),
                   );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.analytics),
+
+                title: const Text('Sync All Data'),
+
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _syncAll(context);
                 },
               ),
             ],
