@@ -7,11 +7,9 @@ import 'models/seat_model.dart';
 import 'models/availability_model.dart';
 import 'models/payment_model.dart';
 import 'models/history_month_model.dart';
-import 'screens/home_screen.dart';
 //import 'services/seat_initializer.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'screens/login_screen.dart';
 import 'models/history_entry_model.dart';
+import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,9 +46,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: FirebaseAuth.instance.currentUser == null
-          ? const LoginScreen()
-          : const HomeScreen(),
+      home: const SplashScreen(),
     );
   }
 }

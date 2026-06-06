@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import '../services/sync_service.dart';
-import '../services/expiry_service.dart';
 import 'student_list_screen.dart';
 import 'seat_screen.dart';
 
@@ -15,29 +13,6 @@ class _HomeScreenState extends State<HomeScreen> {
   int selectedIndex = 0;
 
   final List<Widget> screens = [const StudentListScreen(), const SeatScreen()];
-
-  Future<void> initializeApp() async {
-    try {
-      await SyncService.syncAll();
-
-      await ExpiryService.checkExpiredStudents();
-    } catch (e) {
-      debugPrint("Initialization Error: $e");
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Sync failed: $e")));
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-
-    initializeApp();
-  }
 
   @override
   Widget build(BuildContext context) {
