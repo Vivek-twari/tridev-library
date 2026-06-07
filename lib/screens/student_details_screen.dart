@@ -270,6 +270,8 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                   height: 110,
 
                                   fit: BoxFit.cover,
+                                  memCacheWidth: 220,
+                                  memCacheHeight: 220,
 
                                   placeholder: (_, _) => Container(
                                     width: 110,
@@ -668,6 +670,8 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                                   height: 100,
 
                                                   fit: BoxFit.cover,
+                                                  memCacheWidth: 200,
+                                                  memCacheHeight: 250,
                                                 ),
                                               ),
                                             ),
@@ -711,6 +715,8 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                                   height: 100,
 
                                                   fit: BoxFit.cover,
+                                                  memCacheWidth: 200,
+                                                  memCacheHeight: 250,
                                                 ),
                                               ),
                                             ),

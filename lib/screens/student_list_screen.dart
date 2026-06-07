@@ -587,6 +587,8 @@ class _StudentListScreenState extends State<StudentListScreen> {
                                       backgroundImage: student.photoUrl != null
                                           ? CachedNetworkImageProvider(
                                               student.photoUrl!,
+                                              maxWidth: 150,
+                                              maxHeight: 150,
                                             )
                                           : null,
                                       child: student.photoUrl == null

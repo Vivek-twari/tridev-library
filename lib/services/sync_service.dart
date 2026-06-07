@@ -10,26 +10,24 @@ import '../models/history_month_model.dart';
 
 class SyncService {
   static final firestore = FirebaseFirestore.instance;
+
   static Future<void> syncStudents([
     QuerySnapshot<Map<String, dynamic>>? studentsSnapshot,
   ]) async {
     final studentsBox = Hive.box<StudentModel>("studentsBox");
-
     final cloudStudents =
         studentsSnapshot ?? await firestore.collection("students").get();
 
     /// CLOUD IDS
     final cloudIds = cloudStudents.docs.map((e) => e.id).toSet();
 
-    /// CLOUD → LOCAL
+    /// CLOUD → LOCAL (Handles updates/edits to student details)
     for (final doc in cloudStudents.docs) {
       late final StudentModel cloudStudent;
-
       try {
         cloudStudent = StudentModel.fromMap(doc.data());
       } catch (e) {
         debugPrint('Skipping invalid student doc ${doc.id}: $e');
-
         continue;
       }
 
@@ -38,14 +36,12 @@ class SyncService {
       /// LOCAL MISSING
       if (localStudent == null) {
         await studentsBox.put(cloudStudent.id, cloudStudent);
-
         continue;
       }
 
       /// SAME TIMESTAMPS
       if (SyncTimeService.nearlyEqual(
         cloudStudent.updatedAtEpoch,
-
         localStudent.updatedAtEpoch,
       )) {
         continue;
@@ -65,7 +61,8 @@ class SyncService {
     }
 
     /// LOCAL ONLY → DELETE
-    /// LOCAL ONLY → DELETE
+    /// Since students cannot be added offline, if a student exists locally
+    /// but is missing from the cloud, they were deleted from the server.
     for (final localStudent in studentsBox.values.toList()) {
       if (!cloudIds.contains(localStudent.id)) {
         await studentsBox.delete(localStudent.id);
@@ -75,36 +72,27 @@ class SyncService {
 
   static Future<void> syncSeats() async {
     final seatsBox = Hive.box<SeatModel>("seatsBox");
-
     final cloudSeats = await firestore.collection("seats").get();
 
     for (final doc in cloudSeats.docs) {
       final cloudSeat = SeatModel.fromMap(doc.data());
-
       final localSeat = seatsBox.get(cloudSeat.seatNumber);
 
-      /// local missing
       if (localSeat == null) {
         await seatsBox.put(cloudSeat.seatNumber, cloudSeat);
-
         continue;
       }
 
-      /// timestamps same
       if (SyncTimeService.nearlyEqual(
         cloudSeat.updatedAtEpoch,
-
         localSeat.updatedAtEpoch,
       )) {
         continue;
       }
 
-      /// cloud newer
       if (cloudSeat.updatedAtEpoch > localSeat.updatedAtEpoch) {
         await seatsBox.put(cloudSeat.seatNumber, cloudSeat);
-      }
-      /// local newer
-      else {
+      } else {
         await firestore
             .collection("seats")
             .doc(localSeat.seatNumber.toString())
@@ -115,48 +103,36 @@ class SyncService {
 
   static Future<void> syncAvailability() async {
     final availabilityBox = Hive.box<AvailabilityModel>("availabilityBox");
-
     final doc = await firestore.collection("availability").doc("main").get();
-
     final localAvailability = availabilityBox.get("main");
 
-    /// CLOUD MISSING
     if (!doc.exists) {
-      /// LOCAL EXISTS → UPLOAD
       if (localAvailability != null) {
         await firestore
             .collection("availability")
             .doc("main")
             .set(localAvailability.toMap());
       }
-
       return;
     }
 
     final cloudAvailability = AvailabilityModel.fromMap(doc.data()!);
 
-    /// LOCAL MISSING
     if (localAvailability == null) {
       await availabilityBox.put("main", cloudAvailability);
-
       return;
     }
 
-    /// SAME TIMESTAMPS
     if (SyncTimeService.nearlyEqual(
       cloudAvailability.updatedAtEpoch,
-
       localAvailability.updatedAtEpoch,
     )) {
       return;
     }
 
-    /// CLOUD NEWER
     if (cloudAvailability.updatedAtEpoch > localAvailability.updatedAtEpoch) {
       await availabilityBox.put("main", cloudAvailability);
-    }
-    /// LOCAL NEWER
-    else {
+    } else {
       await firestore
           .collection("availability")
           .doc("main")
@@ -164,76 +140,49 @@ class SyncService {
     }
   }
 
-  static Future<void> syncPayments([
-    QuerySnapshot<Map<String, dynamic>>? studentsSnapshot,
-  ]) async {
+  static Future<void> syncPayments() async {
     final paymentsBox = Hive.box<PaymentModel>("paymentsBox");
-
-    final studentsSnap =
-        studentsSnapshot ?? await firestore.collection("students").get();
-
-    // Keep a set of all payment ids present in Firestore to avoid per-doc reads
     final Set<String> cloudPaymentIds = {};
 
-    for (final studentDoc in studentsSnap.docs) {
-      final studentId = studentDoc.id;
+    /// 🔥 OPTIMIZATION: Pull ALL payments at once via Collection Group
+    final paymentsSnapshot = await firestore.collectionGroup("payments").get();
 
-      final paymentsSnapshot = await firestore
-          .collection("students")
-          .doc(studentId)
-          .collection("payments")
-          .get();
+    /// CLOUD → LOCAL
+    for (final paymentDoc in paymentsSnapshot.docs) {
+      cloudPaymentIds.add(paymentDoc.id);
 
-      for (final paymentDoc in paymentsSnapshot.docs) {
-        cloudPaymentIds.add(paymentDoc.id);
+      final localPayment = paymentsBox.get(paymentDoc.id);
 
+      /// LOCAL MISSING: Save it locally.
+      /// (No timestamp check needed since payments are immutable and never edited!)
+      if (localPayment == null) {
+        final studentId = paymentDoc.reference.parent.parent!.id;
         final cloudData = Map<String, dynamic>.from(paymentDoc.data());
+
         cloudData['paymentId'] = paymentDoc.id;
         cloudData['studentId'] = studentId;
 
         final cloudPayment = PaymentModel.fromMap(cloudData);
-        final localPayment = paymentsBox.get(cloudPayment.paymentId);
-
-        if (localPayment == null) {
-          await paymentsBox.put(cloudPayment.paymentId, cloudPayment);
-        }
+        await paymentsBox.put(cloudPayment.paymentId, cloudPayment);
       }
     }
 
-    // Upload any local payments missing from Firestore using the id set (no extra reads)
-    for (final localPayment in paymentsBox.values) {
+    /// LOCAL ONLY → DELETE
+    /// Since payments are never created offline, if a payment ID is found in Hive
+    /// but isn't present in the cloud, it means it was deleted. Clean it out.
+    for (final localPayment in paymentsBox.values.toList()) {
       if (!cloudPaymentIds.contains(localPayment.paymentId)) {
-        final studentDoc = await firestore
-            .collection("students")
-            .doc(localPayment.studentId)
-            .get();
-
-        /// STUDENT NOT FOUND
-
-        if (!studentDoc.exists) {
-          await paymentsBox.delete(localPayment.paymentId);
-
-          continue;
-        }
-
-        await firestore
-            .collection("students")
-            .doc(localPayment.studentId)
-            .collection("payments")
-            .doc(localPayment.paymentId)
-            .set(localPayment.toMap());
+        await paymentsBox.delete(localPayment.paymentId);
       }
     }
   }
 
   static Future<void> syncHistory() async {
     final historyBox = Hive.box<HistoryMonthModel>("historyBox");
-
     final cloudSnapshot = await firestore.collection("history").get();
 
     for (final doc in cloudSnapshot.docs) {
       final cloud = HistoryMonthModel.fromMap(doc.data());
-
       final local = historyBox.get(cloud.monthId);
 
       if (local == null) {
@@ -260,12 +209,13 @@ class SyncService {
   }
 
   static Future<void> syncAll() async {
-    await syncStudents();
+    // Fetch students once to optimize student list sync
+    final studentsSnapshot = await firestore.collection("students").get();
 
+    await syncStudents(studentsSnapshot);
     await syncSeats();
-
     await syncAvailability();
     await syncHistory();
-    await syncPayments();
+    await syncPayments(); // Simplified: completely decoupled from students collection reading!
   }
 }

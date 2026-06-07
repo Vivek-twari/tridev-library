@@ -23,6 +23,8 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> initialize() async {
+    await Future.delayed(Duration.zero);
+
     final user = FirebaseAuth.instance.currentUser;
 
     /// NOT LOGGED IN
@@ -31,7 +33,6 @@ class _SplashScreenState extends State<SplashScreen> {
 
       Navigator.pushReplacement(
         context,
-
         MaterialPageRoute(builder: (_) => const LoginScreen()),
       );
 
@@ -64,7 +65,6 @@ class _SplashScreenState extends State<SplashScreen> {
 
     Navigator.pushReplacement(
       context,
-
       MaterialPageRoute(builder: (_) => const HomeScreen()),
     );
   }
