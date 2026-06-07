@@ -4,7 +4,6 @@ import 'package:hive/hive.dart';
 import '../models/student_model.dart';
 import '../services/seat_service.dart';
 import '../services/sync_time_service.dart';
-import 'history_service.dart';
 
 class ExpiryService {
   static final firestore = FirebaseFirestore.instance;
@@ -48,11 +47,6 @@ class ExpiryService {
               .collection("students")
               .doc(student.id)
               .set(updatedStudent.toMap());
-          await HistoryService.addEntry(
-            text: "${student.name} membership expired automatically",
-
-            type: "cancelled",
-          );
         } catch (e) {
           // Handle errors (e.g., log them)
         }
